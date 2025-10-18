@@ -39,14 +39,19 @@ def split_subjects(df: pd.DataFrame, seed: int = 42) -> tuple:
     return train_df, val_df, test_df
 
 
-def filter_common_activities(*dfs: pd.DataFrame) -> tuple:
+def filter_common_activities(
+    *dfs: pd.DataFrame, return_activities: bool = False
+) -> tuple | tuple[tuple, list]:
     common_activities = set(dfs[0].activity_id.unique())
     for df in dfs[1:]:
-        common_activities &= set(dfs.activity_id.unique())
+        common_activities &= set(df.activity_id.unique())
 
     filtered_dfs = []
     for df in dfs:
         filtered_df = df[df.activity_id.isin(common_activities)].copy()
-        filtered_dfs.append(filtered_dfs)
+        filtered_dfs.append(filtered_df)
+
+    if return_activities:
+        return tuple(filtered_dfs), common_activities
 
     return tuple(filtered_dfs)
