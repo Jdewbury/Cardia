@@ -2,6 +2,14 @@ import numpy as np
 
 
 def extract_features_from_windows(windows: np.ndarray) -> np.ndarray:
+    """Extract 1D features from window samples.
+    
+    Args:
+        windows: Window samples to extract features from
+        
+    Returns:
+        Extracted features corresponding to each window
+    """
     n_windows, _, n_sensors = windows.shape
 
     features = np.zeros((n_windows, n_sensors * 4))

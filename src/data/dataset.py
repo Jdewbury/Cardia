@@ -5,6 +5,18 @@ import pandas as pd
 def get_windows(
     df: pd.DataFrame, sensor_cols: list, window_size: int, stride: int
 ) -> tuple:
+    """Extract windows from time-series data.
+    
+    Args:
+        df: Dataframe containing time-series samples
+        sensor_cols: Name of sensor columns
+        window_size: Desired window size (in indices)
+        stride: Desired stride (in indices)
+        
+    Returns:
+        tuple: (windows, labels)
+        
+    """
     windows = []
     labels = []
 
@@ -23,9 +35,15 @@ def get_windows(
     return np.array(windows), np.array(labels)
 
 
-def split_subjects(df: pd.DataFrame, seed: int = 42) -> tuple:
-    np.random.seed(seed)
-
+def split_subjects(df: pd.DataFrame) -> tuple:
+    """Split subjects into sets.
+    
+    Args: 
+        df: Dataframe containing time-series samples
+        
+    Returns:
+        tuple: (train_df, val_df, test_df)
+    """
     subject_ids = sorted(df.subject_id.unique())
     train_val_subjects, test_subjects = np.split(subject_ids, [-2])
 
@@ -42,6 +60,15 @@ def split_subjects(df: pd.DataFrame, seed: int = 42) -> tuple:
 def filter_common_activities(
     *dfs: pd.DataFrame, return_activities: bool = False
 ) -> tuple | tuple[tuple, list]:
+    """Filter data sets by common activities.
+    
+    Args:
+        *dfs: Unique dataframes to filter for common activities
+        return_activities: Flag to return the common activities
+    
+    Returns:
+        tuple: (filtered_dfs), common_activities (optional)
+    """
     common_activities = set(dfs[0].activity_id.unique())
     for df in dfs[1:]:
         common_activities &= set(df.activity_id.unique())

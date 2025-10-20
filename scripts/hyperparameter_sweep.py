@@ -18,7 +18,7 @@ def main():
     df = load_pamap2(Path(cfg.data_dir), filter_chest=cfg.filter_chest)
     df_clean = df[df['activity_id'] != 0].copy()
     
-    train_df, val_df, test_df = split_subjects(df_clean, seed=cfg.seed)
+    train_df, val_df, test_df = split_subjects(df_clean)
     train_df, val_df, test_df = filter_common_activities(train_df, val_df, test_df)
     
     sensor_cols = [col for col in train_df.columns if col.startswith('chest_')]

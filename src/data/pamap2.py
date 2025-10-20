@@ -5,6 +5,11 @@ from tqdm import tqdm
 
 
 def get_column_names() -> list:
+    """Initialize PAMAP2 column labels.
+    
+    Returns:
+        List of PAMAP2 data column names in appropriate order
+    """
     imu_cols = [
         "temperature",
         "acc_x",
@@ -35,6 +40,14 @@ def get_column_names() -> list:
 
 
 def _filter_to_chest(df: pd.DataFrame) -> pd.DataFrame:
+    """Filter dataframe to only contain chest IMU labels.
+
+    Args:
+        df: Dataframe object to filter for chest labels
+    
+    Returns:
+        Filtered dataframe with chest labels
+    """
     base_cols = ["timestamp", "activity_id", "heart_rate", "subject_id"]
     chest_cols = [c for c in df.columns if c.startswith("chest_")]
     cols_to_keep = base_cols + chest_cols
@@ -42,6 +55,15 @@ def _filter_to_chest(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def load_pamap2(data_dir: Path, filter_chest: bool = True) -> pd.DataFrame:
+    """Load PAMAP2 patient dataset.
+
+    Args:
+        data_dir: Directory containing patient data
+        filter_chest: Flag to filter for only chest IMU labels
+    
+    Returns:
+        Dataframe object of PAMAP2 patients
+    """
     col_names = get_column_names()
 
     all_dfs = []
