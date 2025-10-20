@@ -53,5 +53,5 @@ def filter_common_activities(
 
     if return_activities:
         return tuple(filtered_dfs), common_activities
-
+    
     return tuple(filtered_dfs)
