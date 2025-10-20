@@ -3,7 +3,7 @@ import pandas as pd
 
 
 def get_windows(
-    df: pd.DataFrame, sensor_cols: list, window_size: int, stride: int
+    df: pd.DataFrame, sensor_cols: list, window_size: int, stride: int, label_col: str = "activity_id"
 ) -> tuple:
     """Extract windows from time-series data.
     
@@ -12,6 +12,7 @@ def get_windows(
         sensor_cols: Name of sensor columns
         window_size: Desired window size (in indices)
         stride: Desired stride (in indices)
+        label_col: Column name to use as label
         
     Returns:
         tuple: (windows, labels)
@@ -20,7 +21,7 @@ def get_windows(
     windows = []
     labels = []
 
-    for (subject, activity), group in df.groupby(["subject_id", "activity_id"]):
+    for (subject, activity), group in df.groupby(["subject_id", label_col]):
         group = group.sort_values("timestamp").reset_index(drop=True)
 
         sensor_data = group[sensor_cols].values

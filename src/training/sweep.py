@@ -4,13 +4,16 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 from sklearn.ensemble import RandomForestClassifier
+from sklearn.preprocessing import LabelEncoder
 from tqdm import tqdm
 from xgboost import XGBClassifier
 
+from src.config import Config
+from src.data import extract_features_from_windows, get_windows
 from src.utils import make_dir, save_file
 
 
-def sweep_random_forest(
+def sweep_random_forest_hyperparams(
     X_train: np.ndarray,
     y_train: np.ndarray,
     X_val: np.ndarray,
@@ -113,7 +116,7 @@ def sweep_random_forest(
     return results_df, best_params, best_model
 
 
-def sweep_xgboost(
+def sweep_xgboost_hyperparams(
     X_train: np.ndarray,
     y_train: np.ndarray,
     X_val: np.ndarray,
@@ -176,6 +179,7 @@ def sweep_xgboost(
                 "learning_rate": lr,
                 "subsample": subsample,
                 "colsample_bytree": colsample,
+                "train_accuracy": train_acc,
                 "val_accuracy": val_acc,
             }
         )
@@ -216,8 +220,118 @@ def sweep_xgboost(
 
         print(f"Results saved to: {output_dir}")
 
-    print("Best XGBoost")
+    print("\nBest XGBoost")
     print(f"    Val Accuracy: {best_row.val_accuracy:.4f}")
     print(f"    Params: {best_params}")
 
     return results_df, best_params, best_model
+
+
+def sweep_window_length(
+    train_df: pd.DataFrame,
+    val_df: pd.DataFrame,
+    sensor_cols: list,
+    cfg: Config,
+    output_dir: str | Path = None,
+    maximum_length: int = 30,
+) -> tuple:
+    """Sweep model over different window lengths (seconds).
+
+    Args:
+        model_params: Parameters to load into model
+        train_df, val_df: Dataframe containing patient samples
+        sensor_cols: Name of sensor columns
+        cfg: Initialized Config object containing experimental parameters
+        output_dir: Desired directory to save hyperparameter results (None = do not save)
+
+    Returns:
+        tuple: (results_df, window_size_sec)
+    """
+    window_configs = np.arange(1, maximum_length + 1, dtype=float)
+
+    if cfg.model_name == "xgboost":
+        label_encoder = LabelEncoder()
+        all_labels = np.concatenate(
+            [train_df.activity_id.unique(), val_df.activity_id.unique()]
+        )
+        label_encoder.fit(all_labels)
+
+    results = []
+    for window_size_sec in tqdm(window_configs, desc="Running window size sweep"):
+        cfg.window_size_sec = window_size_sec
+
+        X_train, y_train = get_windows(
+            train_df, sensor_cols, cfg.window_size_samples, cfg.stride
+        )
+        X_val, y_val = get_windows(
+            val_df, sensor_cols, cfg.window_size_samples, cfg.stride
+        )
+
+        X_train_feat = extract_features_from_windows(X_train)
+        X_val_feat = extract_features_from_windows(X_val)
+
+        if cfg.model_name == "xgboost":
+            y_train_encoded = label_encoder.transform(y_train)
+            y_val_encoded = label_encoder.transform(y_val)
+        else:
+            y_train_encoded = y_train
+            y_val_encoded = y_val
+
+        if cfg.model_name == "random_forest":
+            model_params = cfg.random_forest_params
+            model = RandomForestClassifier(
+                **model_params, random_state=cfg.seed, n_jobs=-1
+            )
+        elif cfg.model_name == "xgboost":
+            model_params = cfg.xgboost_params
+            model = XGBClassifier(
+                **model_params, random_state=cfg.seed, n_jobs=-1, eval_metric="mlogloss"
+            )
+        else:
+            raise ValueError(f"Invalid model name: {cfg.model_name}")
+
+        model.fit(X_train_feat, y_train_encoded)
+        train_acc = model.score(X_train_feat, y_train_encoded)
+        val_acc = model.score(X_val_feat, y_val_encoded)
+
+        results.append(
+            {
+                "window_size_sec": window_size_sec,
+                "window_size_samples": cfg.window_size_samples,
+                "n_train_windows": len(X_train),
+                "n_val_windows": len(X_val),
+                "train_accuracy": train_acc,
+                "val_accuracy": val_acc,
+            }
+        )
+
+    results_df = pd.DataFrame(results)
+
+    best_idx = results_df.val_accuracy.idxmax()
+    best_row = results_df.iloc[best_idx]
+
+    if output_dir:
+        output_dir = make_dir(output_dir)
+
+        results_df.to_csv(output_dir / "window_sweep_results.csv", index=False)
+
+        best_config = {
+            "model": f"{type(model).__name__}",
+            "model_params": model_params,
+            "best_window_size_sec": float(best_row.window_size_sec),
+            "best_window_size_samples": int(best_row.window_size_samples),
+            "performance": {
+                "train_accuracy": float(best_row.train_accuracy),
+                "val_accuracy": float(best_row.val_accuracy),
+            },
+            "window_configs": window_configs.tolist(),
+        }
+        save_file(output_dir / f"{cfg.model_name}_window_best_params.json", best_config)
+
+        print(f"Results saved to: {output_dir}")
+
+    print(f"\nBest {cfg.model_name}")
+    print(f"    Val Accuracy: {best_row.val_accuracy:.4f}")
+    print(f"    Params: {best_row.window_size_sec}")
+
+    return results_df, float(best_row.window_size_sec)

@@ -22,16 +22,16 @@ class Config:
 
     # model
     model_name: str = "random_forest"
-    learning_rate: float = 0.01
-
-    # rf hyperparameters
+    learning_rate: float = 0.1
     n_estimators: int = 50
     max_depth: int = 25
+
+    # rf hyperparameters
     min_samples_split: int = 2
     min_samples_leaf: int = 1
 
     # xgb hyperparameters
-    subsample: float = 0.8
+    subsample: float = 0.7
     colsample_bytree: float = 0.8
 
     # training
@@ -57,7 +57,7 @@ class Config:
     @property
     def experiment_dir(self) -> Path:
         if self.experiment_name:
-            return self.experiment_name
+            return Path(self.output_dir) / self.experiment_name
 
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         name = f"{self.model_name}_w{self.window_size_sec}s_{timestamp}"
@@ -71,6 +71,25 @@ class Config:
     @property
     def stride(self) -> int:
         return int(self.window_size_samples * (1 - self.overlap))
+
+    @property
+    def random_forest_params(self) -> dict:
+        return {
+            "n_estimators": self.n_estimators,
+            "max_depth": self.max_depth,
+            "min_samples_split": self.min_samples_split,
+            "min_samples_leaf": self.min_samples_leaf,
+        }
+
+    @property
+    def xgboost_params(self) -> dict:
+        return {
+            "n_estimators": self.n_estimators,
+            "max_depth": self.max_depth,
+            "learning_rate": self.learning_rate,
+            "subsample": self.subsample,
+            "colsample_bytree": self.colsample_bytree,
+        }
 
     def update_from_args(self) -> None:
         parser = argparse.ArgumentParser(description="Cardia Experimental Config")
