@@ -238,14 +238,13 @@ def sweep_window_length(
     """Sweep model over different window lengths (seconds).
 
     Args:
-        model_params: Parameters to load into model
         train_df, val_df: Dataframe containing patient samples
         sensor_cols: Name of sensor columns
         cfg: Initialized Config object containing experimental parameters
         output_dir: Desired directory to save hyperparameter results (None = do not save)
 
     Returns:
-        tuple: (results_df, window_size_sec)
+        tuple: (results_df, best_window_size_sec)
     """
     window_configs = np.arange(1, maximum_length + 1, dtype=float)
 
@@ -313,7 +312,9 @@ def sweep_window_length(
     if output_dir:
         output_dir = make_dir(output_dir)
 
-        results_df.to_csv(output_dir / "window_sweep_results.csv", index=False)
+        results_df.to_csv(
+            output_dir / f"{cfg.model_name}_window_sweep_results.csv", index=False
+        )
 
         best_config = {
             "model": f"{type(model).__name__}",
@@ -324,7 +325,7 @@ def sweep_window_length(
                 "train_accuracy": float(best_row.train_accuracy),
                 "val_accuracy": float(best_row.val_accuracy),
             },
-            "window_configs": window_configs.tolist(),
+            "window_configs_tested": window_configs.tolist(),
         }
         save_file(output_dir / f"{cfg.model_name}_window_best_params.json", best_config)
 
@@ -335,3 +336,124 @@ def sweep_window_length(
     print(f"    Params: {best_row.window_size_sec}")
 
     return results_df, float(best_row.window_size_sec)
+
+
+def sweep_sampling_rate(
+    train_df: pd.DataFrame,
+    val_df: pd.DataFrame,
+    sensor_cols: list,
+    cfg: Config,
+    output_dir: str | Path = None,
+) -> tuple:
+    """Sweep model over different sampling rates (Hz).
+
+    Args:
+        train_df, val_df: Dataframe containing patient samples
+        sensor_cols: Name of sensor columns
+        cfg: Initialized Config object containing experimental parameters
+        output_dir: Desired directory to save hyperparameter results (None = do not save)
+
+    Returns:
+        tuple: (results_df, best_sampling_rate)
+    """
+    sampling_rates = [100, 50, 25, 20, 10, 5, 2, 1]
+    original_sampling_rate = cfg.sampling_rate
+
+    if cfg.model_name == "xgboost":
+        label_encoder = LabelEncoder()
+        all_labels = np.concatenate(
+            [train_df.activity_id.unique(), val_df.activity_id.unique()]
+        )
+        label_encoder.fit(all_labels)
+
+    results = []
+    for sampling_rate in tqdm(sampling_rates, desc="Running window size sweep"):
+        cfg.sampling_rate = sampling_rate
+        downsample_factor = int(original_sampling_rate / sampling_rate)
+
+        train_df_downsampled = train_df.iloc[::downsample_factor].reset_index(drop=True)
+        val_df_downsampled = val_df.iloc[::downsample_factor].reset_index(drop=True)
+
+        X_train, y_train = get_windows(
+            train_df_downsampled, sensor_cols, cfg.window_size_samples, cfg.stride
+        )
+        X_val, y_val = get_windows(
+            val_df_downsampled, sensor_cols, cfg.window_size_samples, cfg.stride
+        )
+
+        if len(X_train) == 0 or len(X_val) == 0:
+            print(f"Warning: No windows generated for {sampling_rate} Hz, skipping...")
+            continue
+
+        X_train_feat = extract_features_from_windows(X_train)
+        X_val_feat = extract_features_from_windows(X_val)
+
+        if cfg.model_name == "xgboost":
+            y_train_encoded = label_encoder.transform(y_train)
+            y_val_encoded = label_encoder.transform(y_val)
+        else:
+            y_train_encoded = y_train
+            y_val_encoded = y_val
+
+        if cfg.model_name == "random_forest":
+            model_params = cfg.random_forest_params
+            model = RandomForestClassifier(
+                **model_params, random_state=cfg.seed, n_jobs=-1
+            )
+        elif cfg.model_name == "xgboost":
+            model_params = cfg.xgboost_params
+            model = XGBClassifier(
+                **model_params, random_state=cfg.seed, n_jobs=-1, eval_metric="mlogloss"
+            )
+        else:
+            raise ValueError(f"Invalid model name: {cfg.model_name}")
+
+        model.fit(X_train_feat, y_train_encoded)
+        train_acc = model.score(X_train_feat, y_train_encoded)
+        val_acc = model.score(X_val_feat, y_val_encoded)
+
+        results.append(
+            {
+                "sampling_rate": sampling_rate,
+                "downsample_factor": downsample_factor,
+                "n_train_windows": len(X_train),
+                "n_val_windows": len(X_val),
+                "train_accuracy": train_acc,
+                "val_accuracy": val_acc,
+            }
+        )
+
+    results_df = pd.DataFrame(results)
+
+    best_idx = results_df.val_accuracy.idxmax()
+    best_row = results_df.iloc[best_idx]
+
+    if output_dir:
+        output_dir = make_dir(output_dir)
+
+        results_df.to_csv(
+            output_dir / f"{cfg.model_name}_sampling_rate_results.csv", index=False
+        )
+
+        best_config = {
+            "model": f"{type(model).__name__}",
+            "model_params": model_params,
+            "best_sampling_rate": int(best_row.sampling_rate),
+            "best_downsample_factor": int(best_row.downsample_factor),
+            "performance": {
+                "train_accuracy": float(best_row.train_accuracy),
+                "val_accuracy": float(best_row.val_accuracy),
+            },
+            "sampling_rates_tested": sampling_rates,
+        }
+        save_file(
+            output_dir / f"{cfg.model_name}_sampling_rate_best_params.json", best_config
+        )
+
+        print(f"Results saved to: {output_dir}")
+
+    print(f"\nBest {cfg.model_name}")
+    print(f"    Val Accuracy: {best_row.val_accuracy:.4f}")
+    print(f"    Sampling Rate: {best_row.sampling_rate} Hz")
+
+    return results_df, int(best_row.sampling_rate)
