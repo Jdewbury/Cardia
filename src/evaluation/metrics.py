@@ -18,7 +18,17 @@ def evaluate_classical_model(
     X: np.ndarray,
     y_true: np.ndarray,
     label_encoder: LabelEncoder = None,
-):
+) -> dict:
+    """Evaluate classical ML model (Random Forest or XGBoost).
+
+    Args:
+        X: Data samples
+        y_true: Ground-truth labels
+        label_encoder: LabelEncoder object to map labels (optional)
+
+    Returns:
+        Dict containing evaluation metrics
+    """
     y_pred = model.predict(X)
     accuracy = model.score(X, y_true)
 
@@ -50,7 +60,15 @@ def save_evaluation_metrics(
     output_dir: Path,
     split_name: str = "test",
     model_name: str = "model",
-):
+) -> None:
+    """Save evaluation metrics and figures.
+
+    Args:
+        results: Dict containing evaluation metrics
+        output_dir: Directory to save results
+        split_name: Name of data split evaluated
+        model_name: Name of model used for evaluation
+    """
     output_dir = make_dir(output_dir)
 
     cm_path = output_dir / f"cm_{split_name}.npy"

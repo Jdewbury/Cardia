@@ -26,6 +26,7 @@ def train_classical_model(
         X_val, y_val: Validation data
         X_test, y_test: Testing data
         cfg: Config object with experimental parameters
+        output_dir: Directory to save results
 
     Returns:
         tuple: (model, label_encoder, results_dict)
