@@ -72,11 +72,11 @@ def load_pamap2(data_dir: Path, filter_chest: bool = True) -> pd.DataFrame:
     ):
         df = pd.read_csv(file_path, delimiter=" ", header=None, names=col_names)
         df["subject_id"] = file_path.stem.replace("subject", "")
+        if filter_chest:
+            df = _filter_to_chest(df)
+        
         all_dfs.append(df)
 
     combined_df = pd.concat(all_dfs, ignore_index=True)
-
-    if filter_chest:
-        combined_df = _filter_to_chest(combined_df)
-
+    
     return combined_df
