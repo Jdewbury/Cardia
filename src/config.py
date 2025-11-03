@@ -14,6 +14,9 @@ class Config:
     )
     dataset: str = "pamap2"
     filter_chest: bool = True
+    group_activities: bool = False
+    data_sampling_rate: int = 100
+    desired_sampling_rate: int = 100
 
     # preprocessing
     window_size_sec: float = 5.0
@@ -108,6 +111,12 @@ class Config:
             type=str,
             choices=["true", "false"],
             help=f"Filter chest sensors. Default: {self.filter_chest}",
+        )
+        parser.add_argument(
+            "--group_activities",
+            type=str,
+            choices=["true", "false"],
+            help=f"Group activities by intensity. Default: {self.group_activities}",
         )
 
         # preprocessing args

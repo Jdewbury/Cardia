@@ -60,6 +60,7 @@ def save_evaluation_metrics(
     output_dir: Path,
     split_name: str = "test",
     model_name: str = "model",
+    group_activities: bool = False,
 ) -> None:
     """Save evaluation metrics and figures.
 
@@ -85,7 +86,7 @@ def save_evaluation_metrics(
     unique_ids = sorted(
         np.unique(np.concatenate([results["y_true"], results["y_pred"]]))
     )
-    display_labels = get_class_labels(unique_ids)
+    display_labels = get_class_labels(unique_ids, intensity_groups=group_activities)
 
     plot_path = output_dir / f"cm_{split_name}.png"
 

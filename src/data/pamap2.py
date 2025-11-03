@@ -78,5 +78,6 @@ def load_pamap2(data_dir: Path, filter_chest: bool = True) -> pd.DataFrame:
         all_dfs.append(df)
 
     combined_df = pd.concat(all_dfs, ignore_index=True)
+    combined_df["activity_id"] = combined_df["activity_id"].replace(7, 4)
     
     return combined_df

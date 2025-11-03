@@ -11,6 +11,7 @@ from src.data import (
     load_pamap2,
     split_subjects,
 )
+from src.data.constants import map_to_intensity_groups
 from src.training import sweep_random_forest_hyperparams, sweep_xgboost_hyperparams
 from src.utils import make_dir, set_all_seeds
 
@@ -18,12 +19,18 @@ from src.utils import make_dir, set_all_seeds
 def main():
     cfg = Config()
     cfg.update_from_args()
-    cfg.window_size_sec = 5.0  # set constant for sweep
+    cfg.window_size_sec = 10.0  # set constant for sweep
 
     set_all_seeds(cfg.seed)
 
     df = load_pamap2(Path(cfg.data_dir), filter_chest=cfg.filter_chest)
     df_clean = df[df["activity_id"] != 0].copy()
+
+    if cfg.group_activities:
+        df_clean["activity_id"] = map_to_intensity_groups(
+            df_clean["activity_id"].values
+        )
+        print(f"Converted to {len(df_clean['activity_id'].unique())} intensity groups")
 
     train_df, val_df, test_df = split_subjects(df_clean)
     train_df, val_df, test_df = filter_common_activities(train_df, val_df, test_df)

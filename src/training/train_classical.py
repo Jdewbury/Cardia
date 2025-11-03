@@ -74,8 +74,12 @@ def train_classical_model(
     print(f"Test Accuracy:  {test_results['accuracy']:.4f}")
 
     if output_dir:
-        save_evaluation_metrics(val_results, output_dir, "val", cfg.model_name)
-        save_evaluation_metrics(test_results, output_dir, "test", cfg.model_name)
+        save_evaluation_metrics(
+            val_results, output_dir, "val", cfg.model_name, cfg.group_activities
+        )
+        save_evaluation_metrics(
+            test_results, output_dir, "test", cfg.model_name, cfg.group_activities
+        )
 
     return (
         model,

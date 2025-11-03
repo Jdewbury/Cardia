@@ -26,3 +26,4 @@ def extract_features_from_windows(windows: np.ndarray) -> np.ndarray:
         )
 
     return features
+

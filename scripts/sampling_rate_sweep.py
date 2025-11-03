@@ -2,6 +2,7 @@ from pathlib import Path
 
 from src.config import Config
 from src.data import filter_common_activities, load_pamap2, split_subjects
+from src.data.constants import map_to_intensity_groups
 from src.training import sweep_sampling_rate
 from src.utils import make_dir, set_all_seeds
 
@@ -14,6 +15,12 @@ def main():
 
     df = load_pamap2(Path(cfg.data_dir), filter_chest=cfg.filter_chest)
     df_clean = df[df["activity_id"] != 0].copy()
+
+    if cfg.group_activities:
+        df_clean["activity_id"] = map_to_intensity_groups(
+            df_clean["activity_id"].values
+        )
+        print(f"Converted to {len(df_clean['activity_id'].unique())} intensity groups")
 
     train_df, val_df, test_df = split_subjects(df_clean)
     train_df, val_df, test_df = filter_common_activities(train_df, val_df, test_df)

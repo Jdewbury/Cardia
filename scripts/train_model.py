@@ -3,13 +3,8 @@ from pathlib import Path
 import joblib
 
 from src.config import Config
-from src.data import (
-    filter_common_activities,
-    get_class_labels,
-    get_windows,
-    load_pamap2,
-    split_subjects,
-)
+from src.data import filter_common_activities, get_windows, load_pamap2, split_subjects
+from src.data.constants import map_to_intensity_groups
 from src.training.train_classical import train_classical_model
 from src.utils import make_dir, save_file, set_all_seeds
 
@@ -23,10 +18,14 @@ def main():
     df = load_pamap2(Path(cfg.data_dir), filter_chest=cfg.filter_chest)
     df_clean = df[df["activity_id"] != 0].copy()
 
+    if cfg.group_activities:
+        df_clean["activity_id"] = map_to_intensity_groups(
+            df_clean["activity_id"].values
+        )
+        print(f"Converted to {len(df_clean['activity_id'].unique())} intensity groups")
+
     train_df, val_df, test_df = split_subjects(df_clean)
-    (train_df, val_df, test_df), common_activity_ids = filter_common_activities(
-        train_df, val_df, test_df, return_activities=True
-    )
+    train_df, val_df, test_df = filter_common_activities(train_df, val_df, test_df)
 
     sensor_cols = [col for col in train_df.columns if col.startswith("chest_")]
 
