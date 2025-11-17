@@ -54,12 +54,13 @@ def _filter_to_chest(df: pd.DataFrame) -> pd.DataFrame:
     return df[cols_to_keep]
 
 
-def load_pamap2(data_dir: Path, filter_chest: bool = True) -> pd.DataFrame:
+def load_pamap2(data_dir: Path, filter_chest: bool = True, exclude_sensors: list = None) -> pd.DataFrame:
     """Load PAMAP2 patient dataset.
 
     Args:
         data_dir: Directory containing patient data
         filter_chest: Flag to filter for only chest IMU labels
+        exclude_sensors: List of sensors to exclude
     
     Returns:
         Dataframe object of PAMAP2 patients
@@ -79,5 +80,17 @@ def load_pamap2(data_dir: Path, filter_chest: bool = True) -> pd.DataFrame:
 
     combined_df = pd.concat(all_dfs, ignore_index=True)
     combined_df["activity_id"] = combined_df["activity_id"].replace(7, 4)
+    
+    if exclude_sensors:
+        cols_to_drop = []
+        for col in combined_df.columns:
+            if col.startswith("chest_"):
+                sensor_name = col.replace("chest_", "")
+                
+                if sensor_name in exclude_sensors:
+                    cols_to_drop.append(col)
+            
+        combined_df = combined_df.drop(columns=cols_to_drop)
+        print(f"Excluded sensors: {exclude_sensors}")
     
     return combined_df

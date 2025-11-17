@@ -1,6 +1,8 @@
 from pathlib import Path
 
+import matplotlib.pyplot as plt
 import numpy as np
+import pandas as pd
 from sklearn.preprocessing import LabelEncoder
 
 from src.config import Config
@@ -17,6 +19,7 @@ def train_classical_model(
     X_test: np.ndarray,
     y_test: np.ndarray,
     cfg: Config,
+    sensor_cols: list = None,
     output_dir: Path = None,
 ) -> tuple:
     """Train and evaluate classifical ML model (Random Forest or XGBoost).
@@ -74,6 +77,40 @@ def train_classical_model(
     print(f"Test Accuracy:  {test_results['accuracy']:.4f}")
 
     if output_dir:
+        if cfg.model_name == "random_forest" and sensor_cols:
+            feature_names = []
+            for sensor in sensor_cols:
+                feature_names.extend(
+                    [
+                        f"{sensor}_mean",
+                        f"{sensor}_std",
+                        f"{sensor}_min",
+                        f"{sensor}_max",
+                    ]
+                )
+
+            importance_df = pd.DataFrame(
+                {"feature": feature_names, "importance": model.feature_importances_}
+            ).sort_values("importance", ascending=False)
+
+            importance_df.to_csv(output_dir / "feature_importance.csv", index=False)
+
+            fig, ax = plt.subplots(figsize=(10, 8))
+            top_20 = importance_df.head(20)
+            ax.barh(range(20), top_20["importance"])
+            ax.set_yticks(range(20))
+            ax.set_yticklabels(top_20["feature"], fontsize=10)
+            ax.invert_yaxis()
+            ax.set_xlabel("Importance", fontsize=12, fontweight="bold")
+            ax.set_title(
+                "Top 20 Most Important Features", fontsize=14, fontweight="bold"
+            )
+            plt.tight_layout()
+            plt.savefig(
+                output_dir / "feature_importance.png", dpi=300, bbox_inches="tight"
+            )
+            plt.close()
+
         save_evaluation_metrics(
             val_results, output_dir, "val", cfg.model_name, cfg.group_activities
         )

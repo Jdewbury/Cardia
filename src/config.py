@@ -14,6 +14,7 @@ class Config:
     )
     dataset: str = "pamap2"
     filter_chest: bool = True
+    exclude_sensors: list = None
     group_activities: bool = False
     data_sampling_rate: int = 100
     desired_sampling_rate: int = 100
@@ -111,6 +112,12 @@ class Config:
             type=str,
             choices=["true", "false"],
             help=f"Filter chest sensors. Default: {self.filter_chest}",
+        )
+        parser.add_argument(
+            "--exclude_sensors",
+            nargs="+",
+            default=None,
+            help="Sensor types to exclude (e.g., mag_x acc_x_2 acc_y_2 acc_z_2)",
         )
         parser.add_argument(
             "--group_activities",
