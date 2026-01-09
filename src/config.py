@@ -16,6 +16,7 @@ class Config:
     filter_chest: bool = True
     exclude_sensors: list = None
     group_activities: bool = False
+    combine_similar: bool = True
     data_sampling_rate: int = 100
     desired_sampling_rate: int = 100
 
@@ -124,6 +125,12 @@ class Config:
             type=str,
             choices=["true", "false"],
             help=f"Group activities by intensity. Default: {self.group_activities}",
+        )
+        parser.add_argument(
+            "--combine_similar",
+            type=str,
+            choices=["true", "false"],
+            help=f"Group similar granular activities. Default: {self.combine_similar}",
         )
 
         # preprocessing args
