@@ -23,7 +23,12 @@ def main():
 
     set_all_seeds(cfg.seed)
 
-    df = load_pamap2(Path(cfg.data_dir), filter_chest=cfg.filter_chest)
+    df = load_pamap2(
+        Path(cfg.data_dir),
+        filter_chest=cfg.filter_chest,
+        exclude_sensors=cfg.exclude_sensors,
+        combine_similar=cfg.combine_similar,
+    )
     df_clean = df[df["activity_id"] != 0].copy()
 
     if cfg.group_activities:

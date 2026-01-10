@@ -97,7 +97,7 @@ def save_evaluation_metrics(
 
     cmap = "Blues" if "forest" in model_name.lower() else "Greens"
     disp.plot(
-        ax=ax, cmap=cmap, colorbar=True, text_kw={"fontsize": 10, "fontweight": "bold"}
+        ax=ax, cmap=cmap, colorbar=True, text_kw={"fontsize": 14, "fontweight": "bold"}
     )
 
     title = f"{model_name} - {split_name.capitalize()} Set"
@@ -107,9 +107,9 @@ def save_evaluation_metrics(
     ax.set_title(title, fontsize=14, fontweight="bold", pad=15)
     ax.set_xlabel("Predicted Label", fontsize=12, fontweight="bold")
     ax.set_ylabel("True Label", fontsize=12, fontweight="bold")
-    ax.tick_params(axis="x", rotation=45, labelsize=9)
-    ax.tick_params(axis="y", rotation=0, labelsize=9)
-    plt.setp(ax.get_xticklabels(), ha="right")
+    ax.tick_params(axis="x", rotation=45, labelsize=12)
+    ax.tick_params(axis="y", rotation=0, labelsize=12)
+    plt.setp(ax.get_xticklabels(), ha="center")
 
     plt.tight_layout()
     plt.savefig(plot_path, dpi=300, bbox_inches="tight")

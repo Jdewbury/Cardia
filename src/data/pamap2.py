@@ -3,6 +3,8 @@ from pathlib import Path
 import pandas as pd
 from tqdm import tqdm
 
+from src.data import remap_similar_activities
+
 
 def get_column_names() -> list:
     """Initialize PAMAP2 column labels.
@@ -54,12 +56,19 @@ def _filter_to_chest(df: pd.DataFrame) -> pd.DataFrame:
     return df[cols_to_keep]
 
 
-def load_pamap2(data_dir: Path, filter_chest: bool = True) -> pd.DataFrame:
+def load_pamap2(
+    data_dir: Path, 
+    filter_chest: bool = True, 
+    exclude_sensors: list = None,
+    combine_similar: bool = False
+) -> pd.DataFrame:
     """Load PAMAP2 patient dataset.
 
     Args:
         data_dir: Directory containing patient data
         filter_chest: Flag to filter for only chest IMU labels
+        exclude_sensors: List of sensors to exclude
+        combine_similar: Bool to combine similar granular classes
     
     Returns:
         Dataframe object of PAMAP2 patients
@@ -78,6 +87,21 @@ def load_pamap2(data_dir: Path, filter_chest: bool = True) -> pd.DataFrame:
         all_dfs.append(df)
 
     combined_df = pd.concat(all_dfs, ignore_index=True)
-    combined_df["activity_id"] = combined_df["activity_id"].replace(7, 4)
+    
+    if combine_similar:
+        combined_df = remap_similar_activities(combined_df)
+        print("Combined similar activities")
+    
+    if exclude_sensors:
+        cols_to_drop = []
+        for col in combined_df.columns:
+            if col.startswith("chest_"):
+                sensor_name = col.replace("chest_", "")
+                
+                if sensor_name in exclude_sensors:
+                    cols_to_drop.append(col)
+            
+        combined_df = combined_df.drop(columns=cols_to_drop)
+        print(f"Excluded sensors: {exclude_sensors}")
     
     return combined_df

@@ -15,7 +15,12 @@ def main():
 
     set_all_seeds(cfg.seed)
 
-    df = load_pamap2(Path(cfg.data_dir), filter_chest=cfg.filter_chest)
+    df = load_pamap2(
+        Path(cfg.data_dir),
+        filter_chest=cfg.filter_chest,
+        exclude_sensors=cfg.exclude_sensors,
+        combine_similar=cfg.combine_similar,
+    )
     df_clean = df[df["activity_id"] != 0].copy()
 
     if cfg.group_activities:
@@ -44,7 +49,15 @@ def main():
     exp_dir = make_dir(cfg.experiment_dir)
     if cfg.model_name in ["random_forest", "xgboost"]:
         model, label_encoder, metrics = train_classical_model(
-            X_train, y_train, X_val, y_val, X_test, y_test, cfg, output_dir=exp_dir
+            X_train,
+            y_train,
+            X_val,
+            y_val,
+            X_test,
+            y_test,
+            cfg,
+            sensor_cols,
+            output_dir=exp_dir,
         )
     else:
         raise ValueError(f"Unknown model type: {cfg.model_name}")
