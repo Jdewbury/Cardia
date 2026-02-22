@@ -17,6 +17,7 @@ class Config:
     exclude_sensors: list = None
     group_activities: bool = False
     combine_similar: bool = True
+    use_heart_rate: bool = False
     data_sampling_rate: int = 100
     desired_sampling_rate: int = 100
 
@@ -45,8 +46,8 @@ class Config:
     verbose: bool = True
 
     # output
-    output_dir: str = "experiments"
-    experiment_name: str = None
+    output_dir: str = "models"
+    experiment_name: str = "experiments"
 
     # other
     seed: int = 42
@@ -131,6 +132,12 @@ class Config:
             type=str,
             choices=["true", "false"],
             help=f"Group similar granular activities. Default: {self.combine_similar}",
+        )
+        parser.add_argument(
+            "--use_heart_rate",
+            type=str,
+            choices=["true", "false"],
+            help=f"Include heart rate in features. Default: {self.use_heart_rate}",
         )
 
         # preprocessing args

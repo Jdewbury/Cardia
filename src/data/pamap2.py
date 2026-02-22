@@ -1,5 +1,6 @@
 from pathlib import Path
 
+import numpy as np
 import pandas as pd
 from tqdm import tqdm
 
@@ -62,46 +63,42 @@ def load_pamap2(
     exclude_sensors: list = None,
     combine_similar: bool = False
 ) -> pd.DataFrame:
-    """Load PAMAP2 patient dataset.
-
-    Args:
-        data_dir: Directory containing patient data
-        filter_chest: Flag to filter for only chest IMU labels
-        exclude_sensors: List of sensors to exclude
-        combine_similar: Bool to combine similar granular classes
-    
-    Returns:
-        Dataframe object of PAMAP2 patients
-    """
     col_names = get_column_names()
+    
+    if filter_chest:
+        base_cols = ["timestamp", "activity_id", "heart_rate"]
+        chest_cols = [c for c in col_names if c.startswith("chest_")]
+        if exclude_sensors:
+            chest_cols = [c for c in chest_cols if c.replace("chest_", "") not in exclude_sensors]
+        cols_to_use = base_cols + chest_cols
+        usecols = [col_names.index(c) for c in cols_to_use]
+    else:
+        cols_to_use = col_names
+        usecols = list(range(len(col_names)))
 
-    all_dfs = []
-    for file_path in tqdm(
-        sorted(data_dir.glob("*.dat")), desc="Loading PAMAP2 patient data"
-    ):
-        df = pd.read_csv(file_path, delimiter=" ", header=None, names=col_names)
-        df["subject_id"] = file_path.stem.replace("subject", "")
-        if filter_chest:
-            df = _filter_to_chest(df)
+    all_arrays = []
+    subject_ids = []
+    
+    for file_path in tqdm(sorted(data_dir.glob("*.dat")), desc="Loading PAMAP2 patient data"):
+        data = np.loadtxt(file_path, usecols=usecols, dtype=np.float32)
+        all_arrays.append(data)
         
-        all_dfs.append(df)
+        s_id = file_path.stem.replace("subject", "")
+        subject_ids.extend([s_id] * len(data))
+        del data
 
-    combined_df = pd.concat(all_dfs, ignore_index=True)
+    combined = np.vstack(all_arrays)
+    del all_arrays
+    
+    combined_df = pd.DataFrame(combined, columns=cols_to_use)
+    combined_df["subject_id"] = subject_ids
+    del combined
+    del subject_ids
     
     if combine_similar:
         combined_df = remap_similar_activities(combined_df)
         print("Combined similar activities")
-    
     if exclude_sensors:
-        cols_to_drop = []
-        for col in combined_df.columns:
-            if col.startswith("chest_"):
-                sensor_name = col.replace("chest_", "")
-                
-                if sensor_name in exclude_sensors:
-                    cols_to_drop.append(col)
-            
-        combined_df = combined_df.drop(columns=cols_to_drop)
         print(f"Excluded sensors: {exclude_sensors}")
     
     return combined_df

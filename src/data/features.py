@@ -16,14 +16,12 @@ def extract_features_from_windows(windows: np.ndarray) -> np.ndarray:
     for i in range(n_windows):
         window = windows[i]
 
-        features[i] = np.concatenate(
-            [
-                np.mean(window, axis=0),
-                np.std(window, axis=0),
-                np.min(window, axis=0),
-                np.max(window, axis=0),
-            ]
-        )
+        features[i] = np.concatenate([
+            np.nanmean(window, axis=0),   # Ignore NaN
+            np.nanstd(window, axis=0),    # Ignore NaN
+            np.nanmin(window, axis=0),    # Ignore NaN
+            np.nanmax(window, axis=0),    # Ignore NaN
+        ])
 
     return features
 

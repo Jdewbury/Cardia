@@ -29,7 +29,7 @@ def main():
         exclude_sensors=cfg.exclude_sensors,
         combine_similar=cfg.combine_similar,
     )
-    df_clean = df[df["activity_id"] != 0].copy()
+    df_clean = df[df["activity_id"] != 0]
 
     if cfg.group_activities:
         df_clean["activity_id"] = map_to_intensity_groups(
@@ -41,6 +41,9 @@ def main():
     train_df, val_df, test_df = filter_common_activities(train_df, val_df, test_df)
 
     sensor_cols = [col for col in train_df.columns if col.startswith("chest_")]
+
+    if cfg.use_heart_rate and "heart_rate" in train_df.columns:
+        sensor_cols.append("heart_rate")
 
     X_train, y_train = get_windows(
         train_df, sensor_cols, cfg.window_size_samples, cfg.stride

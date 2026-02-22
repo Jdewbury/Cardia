@@ -29,9 +29,8 @@ def get_windows(
         for start_idx in range(0, len(sensor_data) - window_size + 1, stride):
             window = sensor_data[start_idx : start_idx + window_size]
 
-            if not np.isnan(window).any():
-                windows.append(window)
-                labels.append(activity)
+            windows.append(window)
+            labels.append(activity)
 
     return np.array(windows), np.array(labels)
 
