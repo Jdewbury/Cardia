@@ -7,7 +7,11 @@ from sklearn.preprocessing import LabelEncoder
 
 from src.config import Config
 from src.data import extract_features_from_windows, get_class_labels
-from src.evaluation import evaluate_classical_model, save_evaluation_metrics
+from src.evaluation import (
+    analyze_confidence,
+    evaluate_classical_model,
+    save_evaluation_metrics,
+)
 from src.models.classifiers import initialize_random_forest, initialize_xgboost
 
 
@@ -77,6 +81,25 @@ def train_classical_model(
     print(f"Test Accuracy:  {test_results['accuracy']:.4f}")
 
     if output_dir:
+        test_proba = model.predict_proba(X_test_feat)
+        test_pred = model.predict(X_test_feat)
+        y_test_original = (
+            label_encoder.inverse_transform(y_test_encoded)
+            if label_encoder
+            else y_test_encoded
+        )
+        test_pred_original = (
+            label_encoder.inverse_transform(test_pred) if label_encoder else test_pred
+        )
+
+        analyze_confidence(
+            y_test_original,
+            test_pred_original,
+            test_proba,
+            output_dir,
+            cfg.group_activities,
+        )
+
         if cfg.model_name == "random_forest" and sensor_cols:
             feature_names = []
             for sensor in sensor_cols:
