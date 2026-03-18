@@ -31,8 +31,10 @@
 #include "SdFat.h"
 #include "RingBuf.h"
 #include "ICM_20948.h"
+#include "ICM42670P.h"
 #include "ADC15_ECG.h"
 #include <SPI.h>
+#include <TimeLib.h>
 
 // ========================== Configuration ==========================
 
@@ -71,9 +73,10 @@
 
 SdFs sd;
 FsFile file;
+FsFile logFile;
 DMAMEM RingBuf<FsFile, RING_BUF_CAPACITY> rb;
 
-ICM_20948_I2C chestIMU;
+ICM42670 chestIMU(Wire, 1);
 ICM_20948_I2C backIMU;
 ADC15_ECG ecgADC;
 
@@ -138,6 +141,7 @@ void logTimerISR() {
 void setup() {
   Serial.begin(115200);
   while (!Serial && millis() < 3000);
+  setSyncProvider(getTeensy3Time);
 
   Serial.println(F("=========================================="));
   Serial.println(F("Unified Sensor Logger - 100 Hz"));
@@ -146,6 +150,9 @@ void setup() {
 
   pinMode(LED_PIN, OUTPUT);
   digitalWrite(LED_PIN, LOW);
+  pinMode(7, OUTPUT);
+  delay(100);
+  digitalWrite(7, HIGH);
 
   // ---------- Initialize SD card ----------
   Serial.print(F("Initializing SD (SDIO)... "));
@@ -155,35 +162,53 @@ void setup() {
     fatalError();
   }
   Serial.println(F("OK"));
-
+  if (logFile.open("logs.txt", O_RDWR | O_CREAT | O_TRUNC )) {
+    logFile.print(day()); 
+    logFile.print(" "); 
+    logFile.print(month()); 
+    logFile.print(" ");
+    logFile.println(year()); 
+    logFile.print("Log file of most recent run");
+    logFile.flush();
+  }
   // Create unique filename
   char filename[32];
-  int file_num = 0;
-  do {
-    snprintf(filename, sizeof(filename), "log_%03d.csv", file_num++);
-  } while (sd.exists(filename));
+  snprintf(filename, sizeof(filename), "%04d%02d%02d_%02d%02d%02d.csv",
+    year(), month(), day(), hour(), minute(), second());
+
+  // Fallback with counter if filename already exists (e.g. two boots in same second)
+  if (sd.exists(filename)) {
+    int file_num = 1;
+    do {
+      snprintf(filename, sizeof(filename), "%04d%02d%02d_%02d%02d%02d_%d.csv",
+        year(), month(), day(), hour(), minute(), second(), file_num++);
+    } while (sd.exists(filename));
+  }
 
   if (!file.open(filename, O_RDWR | O_CREAT | O_TRUNC)) {
-    Serial.println(F("Failed to create file!"));
+    logFile.println(F("Failed to create file!"));
+    logFile.flush();
     fatalError();
   }
-  Serial.print(F("Logging to: "));
-  Serial.println(filename);
+  logFile.print(F("Logging to: "));
+  logFile.println(filename);
+  logFile.flush();
 
   // Pre-allocate for 10+ hours
-  Serial.print(F("Pre-allocating file... "));
+  logFile.print(F("Pre-allocating file... "));
   if (!file.preAllocate(LOG_FILE_SIZE)) {
-    Serial.println(F("FAILED!"));
+    logFile.println(F("FAILED!"));
+    logFile.flush();
     file.close();
     fatalError();
   }
-  Serial.println(F("OK"));
-
+  logFile.println(F("OK"));
+  logFile.flush();
   // Initialize RingBuf
   rb.begin(&file);
 
   // Write CSV header into the RingBuf
-  rb.print(F("millis,ecg_ch0,ecg_ch1,"));
+  rb.print(F("timestamp,ecg_leadIII,ecg_leadI,"));
   rb.print(F("chest_ax,chest_ay,chest_az,chest_gx,chest_gy,chest_gz,"));
   rb.println(F("back_ax,back_ay,back_az,back_gx,back_gy,back_gz"));
 
@@ -195,45 +220,58 @@ void setup() {
   BACK_WIRE.setClock(I2C_CLOCK_HZ);
 
   // ---------- Initialize Chest IMU ----------
-  Serial.print(F("Initializing Chest IMU... "));
-  if (!initIMU(chestIMU, CHEST_WIRE, 1)) {  // AD0_VAL=1 for 0x68 on SparkFun lib
-    Serial.println(F("FAILED!"));
+  logFile.print(F("Initializing Chest IMU... "));
+  logFile.flush();
+  bool chestStat;
+  chestStat = initChestIMU(chestIMU);
+  if (!chestStat) {  
+    logFile.println(F("FAILED!"));
     fatalError();
   }
-  configureIMU(chestIMU);
-  Serial.println(F("OK"));
+  logFile.println(F("PASSED"));
+  logFile.print("Configuring Chest IMU... ");
+  logFile.flush();
+  configureChestIMU(chestIMU);
+  logFile.println("OK");
 
   // ---------- Initialize Back IMU ----------
-  Serial.print(F("Initializing Back IMU... "));
+  logFile.print(F("Initializing Back IMU... "));
+  logFile.flush();
   if (!initIMU(backIMU, BACK_WIRE, 1)) {  // AD0_VAL=1 for 0x69
-    Serial.println(F("FAILED!"));
+    logFile.println(F("FAILED!"));
     fatalError();
   }
+  logFile.println("PASSED");
+  logFile.print("Configuring Back IMU... ");
+  logFile.flush();
   configureIMU(backIMU);
-  Serial.println(F("OK"));
+  logFile.println(F("OK"));
 
   // ---------- Initialize ECG ADC ----------
-  Serial.print(F("Initializing ADS131M02... "));
+  logFile.print(F("Initializing ADS131M02... "));
+  logFile.flush();
   if (!ecgADC.begin()) {
-    Serial.println(F("FAILED!"));
+    logFile.println(F("FAILED!"));
     fatalError();
   }
-  Serial.println(F("OK"));
+  logFile.println(F("OK"));
 
-  Serial.print(F("Configuring ECG for "));
-  Serial.print(ECG_ADC_RATE_HZ);
-  Serial.print(F(" Hz, gain="));
-  Serial.print(ECG_ADC_GAIN);
-  Serial.print(F("... "));
+  logFile.print(F("Configuring ECG for "));
+  logFile.print(ECG_ADC_RATE_HZ);
+  logFile.print(F(" Hz, gain="));
+  logFile.print(ECG_ADC_GAIN);
+  logFile.print(F("... "));
+  logFile.flush();
   if (!ecgADC.configureSampling(ECG_ADC_RATE_HZ, ECG_ADC_GAIN)) {
     Serial.println(F("FAILED!"));
     fatalError();
   }
-  Serial.println(F("OK"));
-
+  logFile.println(F("OK"));
+  logFile.flush();
   uint16_t devID = ecgADC.readID();
-  Serial.print(F("ADC Device ID: 0x"));
-  Serial.println(devID, HEX);
+  logFile.print(F("ADC Device ID: 0x"));
+  logFile.println(devID, HEX);
+  logFile.flush();
 
   // ---------- Start logging ----------
   session_start_millis = millis();
@@ -242,11 +280,11 @@ void setup() {
   // Start the 100 Hz timer
   logTimer.begin(logTimerISR, LOG_INTERVAL_US);
 
-  Serial.println(F("\n=========================================="));
-  Serial.println(F("Logging started at 100 Hz"));
-  Serial.println(F("Press 's' for stats, 'q' for quick status"));
-  Serial.println(F("==========================================\n"));
-
+  logFile.println(F("\n=========================================="));
+  logFile.println(F("Logging started at 100 Hz"));
+  logFile.println(F("Press 's' for stats, 'q' for quick status"));
+  logFile.println(F("==========================================\n"));
+  logFile.flush();
   digitalWrite(LED_PIN, HIGH);  // Solid = logging
 }
 
@@ -265,7 +303,7 @@ void loop() {
     uint32_t tick_start_us = micros();
 
     // Read both IMUs (direct register read, no DMP)
-    readIMU(chestIMU, chest_data);
+    readChestIMU(chestIMU, chest_data);
     readIMU(backIMU, back_data);
 
     // Read ECG — if FIFO overflowed, re-sync
@@ -280,14 +318,13 @@ void loop() {
       stats.ecg_reads++;
     }
 
-    // Format CSV row into RingBuf
-    uint32_t t = millis() - session_start_millis;
+    char ts[14];
+    formatTimestamp(ts, sizeof(ts));
 
-    // Use a stack buffer + single rb.write() for efficiency
-    char row[160];
+    char row[170];
     int len = snprintf(row, sizeof(row),
-      "%lu,%ld,%ld,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d\n",
-      t,
+      "%s,%ld,%ld,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d\n",
+      ts,
       (long)latest_ecg_ch0, (long)latest_ecg_ch1,
       chest_data.ax, chest_data.ay, chest_data.az,
       chest_data.gx, chest_data.gy, chest_data.gz,
@@ -321,7 +358,7 @@ void loop() {
   if (n >= 512 && !file.isBusy()) {
     uint32_t sd_start_us = micros();
     if (512 != rb.writeOut(512)) {
-      Serial.println(F("ERROR: writeOut failed!"));
+      logFile.println(F("ERROR: writeOut failed!"));
     }
     uint32_t sd_us = micros() - sd_start_us;
     stats.sd_write_count++;
@@ -331,7 +368,7 @@ void loop() {
   }
   // Periodic sync so power loss only loses ~60s of data
   static uint32_t last_sync = 0;
-  if ((millis() - last_sync > 60000) && !file.isBusy()) {
+  if ((millis() - last_sync > 1000) && !file.isBusy()) {
     rb.sync();
     file.flush();
     last_sync = millis();
@@ -373,6 +410,24 @@ bool initIMU(ICM_20948_I2C &imu, TwoWire &wire, uint8_t ad0val) {
   return true;
 }
 
+bool initChestIMU(ICM42670 &imu) {
+  int ret;
+  ret = imu.begin();
+  if (ret != 0) {
+    return false;
+  }
+  return true;
+}
+
+void configureChestIMU(ICM42670 &imu ) {
+  // Accel ODR = 100 Hz and Full Scale Range = 16G
+  imu.startAccel(100,8);
+  // Gyro ODR = 100 Hz and Full Scale Range = 2000 dps
+  imu.startGyro(100,2000);
+  // Wait IMU to start
+  delay(100);
+}
+
 void configureIMU(ICM_20948_I2C &imu) {
   // Software reset for clean state
   imu.swReset();
@@ -408,6 +463,7 @@ void configureIMU(ICM_20948_I2C &imu) {
 
   // Digital low-pass filter: ~50 Hz bandwidth
   // Good anti-alias for 100 Hz logging
+  /*
   ICM_20948_dlpcfg_t dlp;
   dlp.a = acc_d50bw4_n68bw8;     // Accel: 50.4 Hz BW
   dlp.g = gyr_d51bw2_n73bw3;     // Gyro:  51.2 Hz BW
@@ -416,6 +472,7 @@ void configureIMU(ICM_20948_I2C &imu) {
   // Enable DLPF
   imu.enableDLPF(ICM_20948_Internal_Acc, true);
   imu.enableDLPF(ICM_20948_Internal_Gyr, true);
+  */
 }
 
 void readIMU(ICM_20948_I2C &imu, IMUData &data) {
@@ -429,6 +486,18 @@ void readIMU(ICM_20948_I2C &imu, IMUData &data) {
     data.gz = imu.agmt.gyr.axes.z;
   }
 }
+void readChestIMU(ICM42670 &imu, IMUData &data) {
+  inv_imu_sensor_event_t imu_event;
+  // if (imu.isAccelDataValid(imu_event)&&imu.isGyroDataValid(imu_event)) {
+  imu.getDataFromRegisters(imu_event);
+  data.ax = imu_event.accel[0];
+  data.ay = imu_event.accel[1];
+  data.az = imu_event.accel[2];
+  data.gx = imu_event.gyro[0];
+  data.gy = imu_event.gyro[1];
+  data.gz = imu_event.gyro[2];
+  }
+// }
 
 // ========================== Logging Control ==========================
 
@@ -440,11 +509,11 @@ void stopLogging(const char* reason) {
   file.truncate();  // Trim pre-allocated space to actual size
   file.close();
 
-  Serial.println();
-  Serial.print(F("Logging stopped: "));
-  Serial.println(reason);
+  logFile.println();
+  logFile.print(F("Logging stopped: "));
+  logFile.println(reason);
   printStats();
-
+  logFile.close();
   // Blink slowly to indicate stopped
   while (true) {
     digitalWrite(LED_PIN, HIGH);
@@ -589,11 +658,23 @@ void printQuickStatus() {
 // ========================== Error Handler ==========================
 
 void fatalError() {
-  Serial.println(F("\n*** FATAL ERROR - System halted ***"));
+  logFile.println(F("\n*** FATAL ERROR - System halted ***"));
+  logFile.flush();
   while (true) {
     digitalWrite(LED_PIN, HIGH);
     delay(100);
     digitalWrite(LED_PIN, LOW);
     delay(100);
   }
+}
+
+void formatTimestamp(char* buf, size_t bufSize) {
+  uint32_t ms = millis() % 1000;  // sub-second millis
+  snprintf(buf, bufSize, "%02d:%02d:%02d.%03lu",
+    hour(), minute(), second(), (unsigned long)ms);
+}
+
+time_t getTeensy3Time()
+{
+  return Teensy3Clock.get();
 }

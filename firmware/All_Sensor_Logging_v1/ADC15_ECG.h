@@ -18,7 +18,7 @@
 // These use standard Teensy 4.1 SPI pins for best performance
 #define ADC15_CS_PIN        10  // Chip Select for ADS131M02 (any digital pin)
 #define ADC15_CS2_PIN       9   // Chip Select for LTC6903 (any digital pin)
-#define ADC15_DRDY_PIN      2   // Data Ready (use interrupt-capable pin)
+#define ADC15_DRDY_PIN      22   // Data Ready (use interrupt-capable pin)
 #define ADC15_RESET_PIN     3   // Hardware reset (any digital pin)
 
 // SPI pins on Teensy 4.1 (hardware SPI for speed)
