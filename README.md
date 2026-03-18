@@ -7,6 +7,7 @@ A modular machine learning framework for human activity recognition using wearab
 - [Overview](#overview)
 - [Project Structure](#project-structure)
 - [Getting Started](#getting-started)
+- [Configuration](#configuration)
 - [Usage](#usage)
 
 ## Overview
@@ -55,7 +56,6 @@ cardia/
 │       └── reproducibility.py    # Seed management
 │
 ├── experiments/                  # Output directory for results
-├── pyproject.toml                # Project dependencies
 └── README.md                     # This file
 ```
 
@@ -91,6 +91,13 @@ Required packages include:
 2. Extract the dataset and note the path to the `Protocol` directory
 
 3. Update the `data_dir` in your configuration or pass it as a command-line argument
+
+## Configuration
+
+Run any script with `--help` to see all available options:
+```bash
+python scripts/train_model.py --help
+```
 
 ## Usage
 
@@ -174,13 +181,19 @@ python scripts/train_model.py \
 
 ### Output Files
 
-Each experiment creates a timestamped directory in `experiments/` containing:
+Each experiment creates a directory in `experiments/` containing:
 
 - `config.json` - Complete configuration used for the experiment
 - `results.json` - Performance metrics
 - `cm_val.png`, `cm_test.png` - Confusion matrices
 - `predictions_val.npz`, `predictions_test.npz` - Model predictions
+- `confidence_analysis.csv`, `confidence_analysis.png`, `confidence_summary.json` - Prediction confidence breakdown by class
 - `feature_importance.csv`, `feature_importance.png` - Feature importance (Random Forest only)
 - `*_model.pkl` - Trained model (if `--save_model true`)
-- `label_encoder.pkl` - Label encoder (for XGBoost)
-- Sweep results (for sweep scripts): CSV files with all tested configurations
+- `label_encoder.pkl` - Label encoder (XGBoost only)
+
+Sweep scripts produce additional outputs:
+- `rf_sweep_results.csv`, `rf_best_params.json` - Random Forest hyperparameter sweep
+- `xgb_sweep_results.csv`, `xgb_best_params.json` - XGBoost hyperparameter sweep
+- `*_window_sweep_results.csv`, `*_window_best_params.json` - Window size sweep
+- `*_sampling_rate_results.csv`, `*_sampling_rate_best_params.json` - Sampling rate sweep
