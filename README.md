@@ -1,5 +1,5 @@
-# Cardia
-
+<img src="src/img/cardia_logo.png" width="500">
+<br><br>
 A modular machine learning framework for human activity recognition using wearable sensor data integrated into a Holter monitor.
 
 ## Table of Contents
