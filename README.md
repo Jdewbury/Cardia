@@ -93,7 +93,7 @@ Required packages include:
 3. Update the `data_dir` in your configuration or pass it as a command-line argument
 
 ## Configuration
-You can modify the default arguments in the [config](src\config.py) file, or specify CLI arguments when running individual scripts.
+You can modify the default arguments in the [config](src/config.py) file, or specify CLI arguments when running individual scripts.
 
 Full CLI:
 
