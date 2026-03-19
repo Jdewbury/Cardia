@@ -6,7 +6,7 @@
  * Sensors:
  *   - ADS131M02 (via ADC15 Click) : 2-ch ECG over SPI, running ~500 Hz,
  *     drained continuously, latest values logged at 100 Hz
- *   - ICM-20948 "Chest" : accel + gyro over I2C (Wire,  addr 0x68)
+ *   - ICM-42670-P "Chest" : accel + gyro over I2C (Wire,  addr 0x69)
  *   - ICM-20948 "Back"  : accel + gyro over I2C (Wire2, addr 0x69)
  * 
  * SD Logging:
@@ -16,16 +16,15 @@
  *   - Writes in 512-byte sector-aligned chunks
  * 
  * CSV Format (one row per 100 Hz tick):
- *   millis_since_start,ecg_ch0_raw,ecg_ch1_raw,
+ *   timestamp,ecg_leadIII,ecg_leadI,
  *   chest_ax,chest_ay,chest_az,chest_gx,chest_gy,chest_gz,
  *   back_ax,back_ay,back_az,back_gx,back_gy,back_gz
  * 
  * Architecture:
  *   - IntervalTimer fires at 100 Hz, sets a flag
  *   - Main loop continuously:
- *       1. Drains ECG DRDY (keeps latest sample fresh)
- *       2. On flag: polls both IMUs, formats CSV row into RingBuf
- *       3. Writes RingBuf -> SD in 512-byte chunks when SD not busy
+ *       1. On flag: polls both IMUs and the ADC, formats CSV row into RingBuf
+ *       2. Writes RingBuf -> SD in 512-byte chunks when SD not busy
  ****************************************************************/
 
 #include "SdFat.h"
@@ -49,9 +48,11 @@
 // IMU configuration
 #define IMU_ACCEL_FSR        gpm8     // ±8g  (same as your DMP config)
 #define IMU_GYRO_FSR         dps2000  // ±2000 dps
+#define CHEST_ACCEL_FSR      8
+#define CHEST_GYRO_FSR       2000
 
 // I2C buses
-#define CHEST_WIRE           Wire     // Chest IMU on Wire  (AD0=0 -> 0x68)
+#define CHEST_WIRE           Wire     // Chest IMU on Wire  (AD0=1 -> 0x69)
 #define BACK_WIRE            Wire2    // Back  IMU on Wire2 (AD0=1 -> 0x69)
 #define I2C_CLOCK_HZ         100000   // 100 kHz for long wire runs
 
@@ -76,7 +77,7 @@ FsFile file;
 FsFile logFile;
 DMAMEM RingBuf<FsFile, RING_BUF_CAPACITY> rb;
 
-ICM42670 chestIMU(Wire, 1);
+ICM42670 chestIMU(CHEST_WIRE, 1);
 ICM_20948_I2C backIMU;
 ADC15_ECG ecgADC;
 
@@ -103,33 +104,6 @@ volatile bool logFlag = false;
 // Timing
 uint32_t session_start_millis = 0;
 
-// Statistics
-struct {
-  uint32_t rows_written     = 0;
-  uint32_t ecg_reads        = 0;
-  uint32_t missed_deadlines = 0;
-  size_t   maxBytesUsed     = 0;
-  uint32_t last_stats_ms    = 0;
-
-  // Loop timing (full loop iteration)
-  uint32_t loop_count       = 0;
-  uint32_t loop_min_us      = 999999;
-  uint32_t loop_max_us      = 0;
-  uint32_t loop_sum_us      = 0;
-
-  // Log-tick timing (just the sensor read + RingBuf write portion)
-  uint32_t tick_count        = 0;
-  uint32_t tick_min_us       = 999999;
-  uint32_t tick_max_us       = 0;
-  uint32_t tick_sum_us       = 0;
-
-  // SD write timing
-  uint32_t sd_write_count    = 0;
-  uint32_t sd_write_min_us   = 999999;
-  uint32_t sd_write_max_us   = 0;
-  uint32_t sd_write_sum_us   = 0;
-} stats;
-
 // ========================== ISR ==========================
 
 void logTimerISR() {
@@ -139,29 +113,22 @@ void logTimerISR() {
 // ========================== Setup ==========================
 
 void setup() {
-  Serial.begin(115200);
-  while (!Serial && millis() < 3000);
+  while (millis() < 3000);
   setSyncProvider(getTeensy3Time);
-
-  Serial.println(F("=========================================="));
-  Serial.println(F("Unified Sensor Logger - 100 Hz"));
-  Serial.println(F("ECG (ADS131M02) + 2x ICM-20948 -> SD"));
-  Serial.println(F("=========================================="));
 
   pinMode(LED_PIN, OUTPUT);
   digitalWrite(LED_PIN, LOW);
+  
+  // Enable TXS0104 Pin for level shifting
   pinMode(7, OUTPUT);
   delay(100);
   digitalWrite(7, HIGH);
 
   // ---------- Initialize SD card ----------
-  Serial.print(F("Initializing SD (SDIO)... "));
   if (!sd.begin(SD_CONFIG)) {
-    Serial.println(F("FAILED!"));
     sd.initErrorPrint(&Serial);
     fatalError();
   }
-  Serial.println(F("OK"));
   if (logFile.open("logs.txt", O_RDWR | O_CREAT | O_TRUNC )) {
     logFile.print(day()); 
     logFile.print(" "); 
@@ -171,7 +138,7 @@ void setup() {
     logFile.print("Log file of most recent run");
     logFile.flush();
   }
-  // Create unique filename
+  // Create unique data file filename
   char filename[32];
   snprintf(filename, sizeof(filename), "%04d%02d%02d_%02d%02d%02d.csv",
     year(), month(), day(), hour(), minute(), second());
@@ -204,6 +171,7 @@ void setup() {
   }
   logFile.println(F("OK"));
   logFile.flush();
+
   // Initialize RingBuf
   rb.begin(&file);
 
@@ -213,7 +181,6 @@ void setup() {
   rb.println(F("back_ax,back_ay,back_az,back_gx,back_gy,back_gz"));
 
   // ---------- Initialize I2C ----------
-  Serial.println(F("\nInitializing I2C buses..."));
   CHEST_WIRE.begin();
   CHEST_WIRE.setClock(I2C_CLOCK_HZ);
   BACK_WIRE.begin();
@@ -275,7 +242,6 @@ void setup() {
 
   // ---------- Start logging ----------
   session_start_millis = millis();
-  stats.last_stats_ms = session_start_millis;
 
   // Start the 100 Hz timer
   logTimer.begin(logTimerISR, LOG_INTERVAL_US);
@@ -284,23 +250,15 @@ void setup() {
   logFile.println(F("Logging started at 100 Hz"));
   logFile.println(F("Press 's' for stats, 'q' for quick status"));
   logFile.println(F("==========================================\n"));
-  logFile.flush();
-  digitalWrite(LED_PIN, HIGH);  // Solid = logging
+  logFile.close();
 }
 
 // ========================== Main Loop ==========================
 
 void loop() {
-  uint32_t loop_start_us = micros();
-
-  // ---- 1. Continuously drain ECG DRDY for freshest data ----
-  //drainECG();
-
-  // ---- 2. On 100 Hz tick: read IMUs, write row to RingBuf ----
+  // ---- 1. On 100 Hz tick: read IMUs, write row to RingBuf ----
   if (logFlag) {
     logFlag = false;
-
-    uint32_t tick_start_us = micros();
 
     // Read both IMUs (direct register read, no DMP)
     readChestIMU(chestIMU, chest_data);
@@ -311,11 +269,9 @@ void loop() {
     if (ecgADC.isDataReady()) {
       if (!ecgADC.readChannels(ch0, ch1)) {
         ecgADC.readChannels(ch0, ch1);  // re-sync
-        stats.missed_deadlines++;
       }
       latest_ecg_ch0 = ch0;
       latest_ecg_ch1 = ch1;
-      stats.ecg_reads++;
     }
 
     char ts[14];
@@ -331,72 +287,21 @@ void loop() {
       back_data.ax,  back_data.ay,  back_data.az,
       back_data.gx,  back_data.gy,  back_data.gz
     );
-
-    if (rb.write(row, len) != (size_t)len) {
-      // RingBuf overrun - should not happen with proper sizing
-      stats.missed_deadlines++;
-    } else {
-      stats.rows_written++;
-    }
-
-    // Track max RingBuf usage
-    size_t used = rb.bytesUsed();
-    if (used > stats.maxBytesUsed) {
-      stats.maxBytesUsed = used;
-    }
-
-    // Tick timing
-    uint32_t tick_us = micros() - tick_start_us;
-    stats.tick_count++;
-    stats.tick_sum_us += tick_us;
-    if (tick_us < stats.tick_min_us) stats.tick_min_us = tick_us;
-    if (tick_us > stats.tick_max_us) stats.tick_max_us = tick_us;
   }
 
-  // ---- 3. Drain RingBuf to SD in 512-byte sectors ----
-  size_t n = rb.bytesUsed();
-  if (n >= 512 && !file.isBusy()) {
-    uint32_t sd_start_us = micros();
-    if (512 != rb.writeOut(512)) {
-      logFile.println(F("ERROR: writeOut failed!"));
-    }
-    uint32_t sd_us = micros() - sd_start_us;
-    stats.sd_write_count++;
-    stats.sd_write_sum_us += sd_us;
-    if (sd_us < stats.sd_write_min_us) stats.sd_write_min_us = sd_us;
-    if (sd_us > stats.sd_write_max_us) stats.sd_write_max_us = sd_us;
-  }
+  // ---- 2. Drain RingBuf to SD in 512-byte sectors ----
   // Periodic sync so power loss only loses ~60s of data
   static uint32_t last_sync = 0;
-  if ((millis() - last_sync > 1000) && !file.isBusy()) {
+  if ((millis() - last_sync > 60000) && !file.isBusy()) {
     rb.sync();
     file.flush();
     last_sync = millis();
   }
 
-  // ---- 4. Check for file full ----
+  // ---- 3. Check for file full ----
   if ((rb.bytesUsed() + file.curPosition()) > (LOG_FILE_SIZE - 512)) {
     stopLogging("File full");
   }
-
-  // ---- 5. Serial commands (non-blocking) ----
-  if (Serial.available()) {
-    char cmd = Serial.read();
-    while (Serial.available()) Serial.read();  // flush
-
-    switch (cmd) {
-      case 's': case 'S': printStats();       break;
-      case 'q': case 'Q': printQuickStatus(); break;
-      case 'x': case 'X': stopLogging("User requested stop"); break;
-    }
-  }
-
-  // ---- Loop timing ----
-  uint32_t loop_us = micros() - loop_start_us;
-  stats.loop_count++;
-  stats.loop_sum_us += loop_us;
-  if (loop_us < stats.loop_min_us) stats.loop_min_us = loop_us;
-  if (loop_us > stats.loop_max_us) stats.loop_max_us = loop_us;
 }
 
 // ========================== IMU Functions ==========================
@@ -420,10 +325,10 @@ bool initChestIMU(ICM42670 &imu) {
 }
 
 void configureChestIMU(ICM42670 &imu ) {
-  // Accel ODR = 100 Hz and Full Scale Range = 16G
-  imu.startAccel(100,8);
+  // Accel ODR = 100 Hz and Full Scale Range = 8G
+  imu.startAccel(LOG_RATE_HZ, CHEST_ACCEL_FSR);
   // Gyro ODR = 100 Hz and Full Scale Range = 2000 dps
-  imu.startGyro(100,2000);
+  imu.startGyro(LOG_RATE_HZ, CHEST_GYRO_FSR);
   // Wait IMU to start
   delay(100);
 }
@@ -449,10 +354,10 @@ void configureIMU(ICM_20948_I2C &imu) {
   fss.g = IMU_GYRO_FSR;   // dps2000 = ±2000 dps
   imu.setFullScale((ICM_20948_Internal_Acc | ICM_20948_Internal_Gyr), fss);
 
-  // Set sample rate divider for ~100 Hz
+  // Set sample rate divider for 562.5 Hz so data is always fresh
   // ICM-20948 base rate = 1125 Hz for accel/gyro
-  // Divider = (1125 / desired_rate) - 1 = (1125/100) - 1 ≈ 10
-  // Actual rate = 1125 / (10+1) = 102.27 Hz
+  // Divider = (1125 / desired_rate) - 1 = (1125/562.5) - 1 ≈ 1
+  // Actual rate = 1125 / (1+1) = 562.5 Hz
   ICM_20948_smplrt_t smplrt;
   smplrt.a = 1;  // accel: 1125/(1+1) ≈ 562.5 Hz
   smplrt.g = 1;  // gyro:  1125/(1+1) ≈ 562.5 Hz
@@ -460,19 +365,6 @@ void configureIMU(ICM_20948_I2C &imu) {
     (ICM_20948_Internal_Acc | ICM_20948_Internal_Gyr),
     smplrt
   );
-
-  // Digital low-pass filter: ~50 Hz bandwidth
-  // Good anti-alias for 100 Hz logging
-  /*
-  ICM_20948_dlpcfg_t dlp;
-  dlp.a = acc_d50bw4_n68bw8;     // Accel: 50.4 Hz BW
-  dlp.g = gyr_d51bw2_n73bw3;     // Gyro:  51.2 Hz BW
-  imu.setDLPFcfg((ICM_20948_Internal_Acc | ICM_20948_Internal_Gyr), dlp);
-
-  // Enable DLPF
-  imu.enableDLPF(ICM_20948_Internal_Acc, true);
-  imu.enableDLPF(ICM_20948_Internal_Gyr, true);
-  */
 }
 
 void readIMU(ICM_20948_I2C &imu, IMUData &data) {
@@ -488,7 +380,6 @@ void readIMU(ICM_20948_I2C &imu, IMUData &data) {
 }
 void readChestIMU(ICM42670 &imu, IMUData &data) {
   inv_imu_sensor_event_t imu_event;
-  // if (imu.isAccelDataValid(imu_event)&&imu.isGyroDataValid(imu_event)) {
   imu.getDataFromRegisters(imu_event);
   data.ax = imu_event.accel[0];
   data.ay = imu_event.accel[1];
@@ -497,7 +388,6 @@ void readChestIMU(ICM42670 &imu, IMUData &data) {
   data.gy = imu_event.gyro[1];
   data.gz = imu_event.gyro[2];
   }
-// }
 
 // ========================== Logging Control ==========================
 
@@ -509,153 +399,14 @@ void stopLogging(const char* reason) {
   file.truncate();  // Trim pre-allocated space to actual size
   file.close();
 
-  logFile.println();
-  logFile.print(F("Logging stopped: "));
-  logFile.println(reason);
-  printStats();
-  logFile.close();
   // Blink slowly to indicate stopped
   while (true) {
     digitalWrite(LED_PIN, HIGH);
     delay(500);
     digitalWrite(LED_PIN, LOW);
     delay(500);
-
-    // Allow restart with 'r'
-    if (Serial.available() && Serial.read() == 'r') {
-      Serial.println(F("Resetting..."));
-      SCB_AIRCR = 0x05FA0004;  // Teensy software reset
-    }
   }
 }
-
-// ========================== Status / Debug ==========================
-
-void printStats() {
-  uint32_t elapsed_ms = millis() - session_start_millis;
-  float elapsed_sec = elapsed_ms / 1000.0f;
-
-  Serial.println(F("\n========== Statistics =========="));
-  Serial.print(F("Elapsed: "));
-  Serial.print(elapsed_sec, 1);
-  Serial.println(F(" s"));
-
-  Serial.print(F("Rows written: "));
-  Serial.println(stats.rows_written);
-
-  if (elapsed_sec > 0) {
-    Serial.print(F("Effective log rate: "));
-    Serial.print(stats.rows_written / elapsed_sec, 1);
-    Serial.println(F(" Hz"));
-
-    Serial.print(F("ECG drain rate: "));
-    Serial.print(stats.ecg_reads / elapsed_sec, 1);
-    Serial.println(F(" Hz"));
-  }
-
-  Serial.print(F("Missed deadlines: "));
-  Serial.println(stats.missed_deadlines);
-
-  // RingBuf usage
-  Serial.print(F("\nRingBuf max used: "));
-  Serial.print(stats.maxBytesUsed);
-  Serial.print(F(" / "));
-  Serial.print(RING_BUF_CAPACITY);
-  Serial.print(F(" ("));
-  Serial.print(100.0f * stats.maxBytesUsed / RING_BUF_CAPACITY, 1);
-  Serial.println(F("%)"));
-
-  Serial.print(F("File position: "));
-  Serial.print((uint32_t)(file.curPosition() / 1024));
-  Serial.println(F(" KB"));
-
-  // Loop timing
-  if (stats.loop_count > 0) {
-    uint32_t loop_avg = stats.loop_sum_us / stats.loop_count;
-    Serial.println(F("\n-- Full Loop Timing --"));
-    Serial.print(F("  Iterations: "));
-    Serial.println(stats.loop_count);
-    Serial.print(F("  Min: "));
-    Serial.print(stats.loop_min_us);
-    Serial.println(F(" us"));
-    Serial.print(F("  Avg: "));
-    Serial.print(loop_avg);
-    Serial.println(F(" us"));
-    Serial.print(F("  Max: "));
-    Serial.print(stats.loop_max_us);
-    Serial.println(F(" us"));
-    Serial.print(F("  Loops/tick: ~"));
-    Serial.println(stats.loop_count / max(stats.tick_count, (uint32_t)1));
-  }
-
-  // Tick timing (sensor read + ringbuf write on 100 Hz tick)
-  if (stats.tick_count > 0) {
-    uint32_t tick_avg = stats.tick_sum_us / stats.tick_count;
-    Serial.println(F("\n-- 100 Hz Tick Timing (IMU read + format + RingBuf write) --"));
-    Serial.print(F("  Ticks: "));
-    Serial.println(stats.tick_count);
-    Serial.print(F("  Min: "));
-    Serial.print(stats.tick_min_us);
-    Serial.println(F(" us"));
-    Serial.print(F("  Avg: "));
-    Serial.print(tick_avg);
-    Serial.println(F(" us"));
-    Serial.print(F("  Max: "));
-    Serial.print(stats.tick_max_us);
-    Serial.println(F(" us"));
-
-    // Margin: how much of the 10ms budget are we using?
-    float margin_pct = 100.0f * (1.0f - (float)tick_avg / LOG_INTERVAL_US);
-    Serial.print(F("  Budget margin: "));
-    Serial.print(margin_pct, 1);
-    Serial.println(F("% (of 10000 us)"));
-
-    if (stats.tick_max_us > LOG_INTERVAL_US) {
-      Serial.print(F("  WARNING: Max tick ("));
-      Serial.print(stats.tick_max_us);
-      Serial.print(F(" us) exceeds budget by "));
-      Serial.print(stats.tick_max_us - LOG_INTERVAL_US);
-      Serial.println(F(" us!"));
-    }
-  }
-
-  // SD write timing
-  if (stats.sd_write_count > 0) {
-    uint32_t sd_avg = stats.sd_write_sum_us / stats.sd_write_count;
-    Serial.println(F("\n-- SD Write Timing (per 512-byte sector) --"));
-    Serial.print(F("  Writes: "));
-    Serial.println(stats.sd_write_count);
-    Serial.print(F("  Min: "));
-    Serial.print(stats.sd_write_min_us);
-    Serial.println(F(" us"));
-    Serial.print(F("  Avg: "));
-    Serial.print(sd_avg);
-    Serial.println(F(" us"));
-    Serial.print(F("  Max: "));
-    Serial.print(stats.sd_write_max_us);
-    Serial.println(F(" us"));
-  }
-
-  Serial.println(F("================================\n"));
-}
-
-void printQuickStatus() {
-  uint32_t elapsed_sec = (millis() - session_start_millis) / 1000;
-  uint32_t tick_avg = (stats.tick_count > 0) ? stats.tick_sum_us / stats.tick_count : 0;
-  Serial.print(elapsed_sec);
-  Serial.print(F("s | "));
-  Serial.print(stats.rows_written);
-  Serial.print(F(" rows | tick avg "));
-  Serial.print(tick_avg);
-  Serial.print(F("us max "));
-  Serial.print(stats.tick_max_us);
-  Serial.print(F("us | buf "));
-  Serial.print(100.0f * rb.bytesUsed() / RING_BUF_CAPACITY, 0);
-  Serial.print(F("% | miss "));
-  Serial.println(stats.missed_deadlines);
-}
-
-// ========================== Error Handler ==========================
 
 void fatalError() {
   logFile.println(F("\n*** FATAL ERROR - System halted ***"));
