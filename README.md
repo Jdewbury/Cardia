@@ -1,4 +1,4 @@
-# Cardia
+<img src="src/img/cardia_logo.png" width="500">
 
 A modular machine learning framework for human activity recognition using wearable sensor data integrated into a Holter monitor.
 
@@ -7,6 +7,7 @@ A modular machine learning framework for human activity recognition using wearab
 - [Overview](#overview)
 - [Project Structure](#project-structure)
 - [Getting Started](#getting-started)
+- [Configuration](#configuration)
 - [Usage](#usage)
 
 ## Overview
@@ -55,7 +56,6 @@ cardia/
 │       └── reproducibility.py    # Seed management
 │
 ├── experiments/                  # Output directory for results
-├── pyproject.toml                # Project dependencies
 └── README.md                     # This file
 ```
 
@@ -91,6 +91,71 @@ Required packages include:
 2. Extract the dataset and note the path to the `Protocol` directory
 
 3. Update the `data_dir` in your configuration or pass it as a command-line argument
+
+## Configuration
+You can modify the default arguments in the [config](src/config.py) file, or specify CLI arguments when running individual scripts.
+
+Full CLI:
+
+```
+usage: train_model.py [-h] [--data_dir DATA_DIR] [--dataset DATASET] [--filter_chest {true,false}] [--exclude_sensors EXCLUDE_SENSORS [EXCLUDE_SENSORS ...]]    
+                      [--group_activities {true,false}] [--combine_similar {true,false}] [--use_all_data {true,false}] [--use_heart_rate {true,false}]
+                      [--window_size_sec WINDOW_SIZE_SEC] [--overlap OVERLAP] [--sampling_rate SAMPLING_RATE] [--model_name {random_forest,xgboost}]
+                      [--learning_rate LEARNING_RATE] [--n_estimators N_ESTIMATORS] [--max_depth MAX_DEPTH] [--min_samples_split MIN_SAMPLES_SPLIT]
+                      [--min_samples_leaf MIN_SAMPLES_LEAF] [--subsample SUBSAMPLE] [--colsample_bytree COLSAMPLE_BYTREE] [--save_model {true,false}]
+                      [--save_predictions {true,false}] [--verbose {true,false}] [--output_dir OUTPUT_DIR] [--experiment_name EXPERIMENT_NAME] [--seed SEED]    
+
+Cardia Experimental Config
+
+options:
+  -h, --help            show this help message and exit
+  --data_dir DATA_DIR   Path to data directory. Default: data\pamap2+physical+activity+monitoring\PAMAP2_Dataset\PAMAP2_Dataset\Protocol
+  --dataset DATASET     Dataset name. Default: pamap2
+  --filter_chest {true,false}
+                        Filter chest sensors. Default: True
+  --exclude_sensors EXCLUDE_SENSORS [EXCLUDE_SENSORS ...]
+                        Sensor types to exclude (e.g., mag_x acc_x_2 acc_y_2 acc_z_2)
+  --group_activities {true,false}
+                        Group activities by intensity. Default: False
+  --combine_similar {true,false}
+                        Group similar granular activities. Default: True
+  --use_all_data {true,false}
+                        Include all data into training. Default: False
+  --use_heart_rate {true,false}
+                        Include heart rate in features. Default: False
+  --window_size_sec WINDOW_SIZE_SEC
+                        Window size in seconds. Default: 5.0
+  --overlap OVERLAP     Window overlap fraction. Default: 0.5
+  --sampling_rate SAMPLING_RATE
+                        Sampling rate. Default: 100
+  --model_name {random_forest,xgboost}
+                        Model name. Default: random_forest
+  --learning_rate LEARNING_RATE
+                        Learning rate. Default: 0.1
+  --n_estimators N_ESTIMATORS
+                        Random forest n_estimators. Default: 50
+  --max_depth MAX_DEPTH
+                        Random forest max_depth. Default: 25
+  --min_samples_split MIN_SAMPLES_SPLIT
+                        Random forest min_samples_split. Default: 2
+  --min_samples_leaf MIN_SAMPLES_LEAF
+                        Random forest min_samples_leaf. Default: 1
+  --subsample SUBSAMPLE
+                        XGB subsample. Default: 0.7
+  --colsample_bytree COLSAMPLE_BYTREE
+                        XGB colsample_bytree. Default: 0.8
+  --save_model {true,false}
+                        Save model. Default: True
+  --save_predictions {true,false}
+                        Save predictions. Default: False
+  --verbose {true,false}
+                        Verbose output. Default: True
+  --output_dir OUTPUT_DIR
+                        Output directory. Default: models
+  --experiment_name EXPERIMENT_NAME
+                        Experiment name. Default: experiments
+  --seed SEED           Random seed. Default: 42
+```
 
 ## Usage
 
@@ -174,13 +239,19 @@ python scripts/train_model.py \
 
 ### Output Files
 
-Each experiment creates a timestamped directory in `experiments/` containing:
+Each experiment creates a directory in `experiments/` containing:
 
 - `config.json` - Complete configuration used for the experiment
 - `results.json` - Performance metrics
 - `cm_val.png`, `cm_test.png` - Confusion matrices
 - `predictions_val.npz`, `predictions_test.npz` - Model predictions
+- `confidence_analysis.csv`, `confidence_analysis.png`, `confidence_summary.json` - Prediction confidence breakdown by class
 - `feature_importance.csv`, `feature_importance.png` - Feature importance (Random Forest only)
 - `*_model.pkl` - Trained model (if `--save_model true`)
-- `label_encoder.pkl` - Label encoder (for XGBoost)
-- Sweep results (for sweep scripts): CSV files with all tested configurations
+- `label_encoder.pkl` - Label encoder (XGBoost only)
+
+Sweep scripts produce additional outputs:
+- `rf_sweep_results.csv`, `rf_best_params.json` - Random Forest hyperparameter sweep
+- `xgb_sweep_results.csv`, `xgb_best_params.json` - XGBoost hyperparameter sweep
+- `*_window_sweep_results.csv`, `*_window_best_params.json` - Window size sweep
+- `*_sampling_rate_results.csv`, `*_sampling_rate_best_params.json` - Sampling rate sweep

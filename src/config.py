@@ -17,6 +17,7 @@ class Config:
     exclude_sensors: list = None
     group_activities: bool = False
     combine_similar: bool = True
+    use_all_data: bool = False
     use_heart_rate: bool = False
     data_sampling_rate: int = 100
     desired_sampling_rate: int = 100
@@ -132,6 +133,12 @@ class Config:
             type=str,
             choices=["true", "false"],
             help=f"Group similar granular activities. Default: {self.combine_similar}",
+        )
+        parser.add_argument(
+            "--use_all_data",
+            type=str,
+            choices=["true", "false"],
+            help=f"Include all data into training. Default: {self.use_all_data}",
         )
         parser.add_argument(
             "--use_heart_rate",

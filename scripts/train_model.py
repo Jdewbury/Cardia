@@ -1,6 +1,7 @@
 from pathlib import Path
 
 import joblib
+import pandas as pd
 
 from src.config import Config
 from src.data import filter_common_activities, get_windows, load_pamap2, split_subjects
@@ -24,15 +25,19 @@ def main():
     df_clean = df[df["activity_id"] != 0]
 
     if cfg.group_activities:
-        df_clean = df_clean.copy()
         df_clean["activity_id"] = map_to_intensity_groups(
             df_clean["activity_id"].astype(int).values
         )
         print(f"Converted to {len(df_clean['activity_id'].unique())} intensity groups")
 
     train_df, val_df, test_df = split_subjects(df_clean)
-
     train_df, val_df, test_df = filter_common_activities(train_df, val_df, test_df)
+
+    if cfg.use_all_data:
+        print("Combining all data for training")
+        train_df = pd.concat([train_df, val_df, test_df], ignore_index=True)
+        val_df = None
+        test_df = None
 
     sensor_cols = [col for col in train_df.columns if col.startswith("chest_")]
 
@@ -42,14 +47,20 @@ def main():
     X_train, y_train = get_windows(
         train_df, sensor_cols, cfg.window_size_samples, cfg.stride
     )
-    X_val, y_val = get_windows(val_df, sensor_cols, cfg.window_size_samples, cfg.stride)
-    X_test, y_test = get_windows(
-        test_df, sensor_cols, cfg.window_size_samples, cfg.stride
-    )
 
-    print(f"Train: {X_train.shape[0]} windows")
-    print(f"Val:   {X_val.shape[0]} windows")
-    print(f"Test:  {X_test.shape[0]} windows")
+    if val_df is not None:
+        X_val, y_val = get_windows(
+            val_df, sensor_cols, cfg.window_size_samples, cfg.stride
+        )
+    else:
+        X_val, y_val = None, None
+
+    if test_df is not None:
+        X_test, y_test = get_windows(
+            test_df, sensor_cols, cfg.window_size_samples, cfg.stride
+        )
+    else:
+        X_test, y_test = None, None
 
     exp_dir = make_dir(cfg.experiment_dir)
     if cfg.model_name in ["random_forest", "xgboost"]:

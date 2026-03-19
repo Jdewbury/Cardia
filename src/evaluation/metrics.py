@@ -2,6 +2,7 @@ from pathlib import Path
 
 import matplotlib.pyplot as plt
 import numpy as np
+from matplotlib.colors import LinearSegmentedColormap
 from sklearn.metrics import (
     ConfusionMatrixDisplay,
     classification_report,
@@ -95,9 +96,15 @@ def save_evaluation_metrics(
         confusion_matrix=results["confusion_matrix"], display_labels=display_labels
     )
 
-    cmap = "Blues" if "forest" in model_name.lower() else "Greens"
+    dark_color = "#303336"
+
+    cmap = LinearSegmentedColormap.from_list(
+        "custom_cm",
+        ["#ffffff", dark_color],  # light → dark
+    )
+    # cmap = "Blues" if "forest" in model_name.lower() else "Greens"
     disp.plot(
-        ax=ax, cmap=cmap, colorbar=True, text_kw={"fontsize": 14, "fontweight": "bold"}
+        ax=ax, cmap=cmap, colorbar=True, text_kw={"fontsize": 20, "fontweight": "bold"}
     )
 
     title = f"{model_name} - {split_name.capitalize()} Set"
