@@ -287,6 +287,7 @@ void loop() {
       back_data.ax,  back_data.ay,  back_data.az,
       back_data.gx,  back_data.gy,  back_data.gz
     );
+    rb.write(row, len);
   }
 
   // ---- 2. Drain RingBuf to SD in 512-byte sectors ----
