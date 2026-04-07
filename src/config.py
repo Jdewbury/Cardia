@@ -50,6 +50,14 @@ class Config:
     output_dir: str = "models"
     experiment_name: str = "experiments"
 
+    # validation
+    recording_path: str = None
+    model_path: str = None
+    intervals: str = None
+    sensor_orientation: str = "new"
+    ecg_channel: str = "ecg_leadIII"
+    smoothing: bool = True
+
     # other
     seed: int = 42
 
@@ -240,15 +248,66 @@ class Config:
             type=str,
             help=f"Experiment name. Default: {self.experiment_name}",
         )
+
+        # validation args
+        parser.add_argument(
+            "--recording",
+            type=str,
+            help="Path to recording CSV file for validation",
+        )
+        parser.add_argument(
+            "--model",
+            type=str,
+            help="Path to trained model file for validation",
+        )
+        parser.add_argument(
+            "--intervals",
+            type=str,
+            help="Comma-separated time intervals (e.g., 11:46-11:48,11:48-11:58)",
+        )
+        parser.add_argument(
+            "--orientation",
+            type=str,
+            choices=["old", "new"],
+            help=f"Sensor orientation. Default: {self.sensor_orientation}",
+        )
+        parser.add_argument(
+            "--ecg_channel",
+            type=str,
+            help=f"ECG channel to use. Default: {self.ecg_channel}",
+        )
+        parser.add_argument(
+            "--smoothing",
+            type=str,
+            choices=["true", "false"],
+            help=f"Apply smoothing post-processing. Default: {self.smoothing}",
+        )
+
         parser.add_argument(
             "--seed", type=int, help=f"Random seed. Default: {self.seed}"
         )
 
         args = parser.parse_args()
 
-        for k, v in vars(args).items():
-            if v is not None and hasattr(self, k):
-                if isinstance(getattr(self, k), bool):
-                    setattr(self, k, v.lower() == "true")
+        for key, value in vars(args).items():
+            if value is not None:
+                if key in [
+                    "filter_chest",
+                    "group_activities",
+                    "combine_similar",
+                    "use_all_data",
+                    "use_heart_rate",
+                    "save_model",
+                    "save_predictions",
+                    "verbose",
+                    "smoothing",
+                ]:
+                    setattr(self, key, value.lower() == "true")
+                elif key == "recording":
+                    self.recording_path = value
+                elif key == "model":
+                    self.model_path = value
+                elif key == "orientation":
+                    self.sensor_orientation = value
                 else:
-                    setattr(self, k, v)
+                    setattr(self, key, value)
