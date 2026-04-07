@@ -26,11 +26,12 @@ This project implements classical machine learning models (Random Forest and XGB
 
 ```
 cardia/
-├── scripts/                      # Experiment entry points
+├── scripts/                      # Experiment and inference entry points
 │   ├── train_model.py            # Train and evaluate a single model
 │   ├── hyperparameter_sweep.py   # Grid search for model hyperparameters
 │   ├── window_sweep.py           # Find optimal window size
-│   └── sampling_rate_sweep.py    # Find optimal sampling rate
+│   ├── sampling_rate_sweep.py    # Find optimal sampling rate
+│   └── validate_activity.py      # Run activity prediction on raw recordings
 │
 ├── src/
 │   ├── config.py                 # Configuration management
@@ -39,7 +40,8 @@ cardia/
 │   │   ├── constants.py          # Dataset-specific mappings and constants
 │   │   ├── dataset.py            # Windowing and data splitting utilities
 │   │   ├── features.py           # Feature extraction functions
-│   │   └── pamap2.py             # PAMAP2 dataset loader
+│   │   ├── pamap2.py             # PAMAP2 dataset loader
+│   │   └── recording.py          # Raw recording conversion + HR extraction
 │   │
 │   ├── models/                   # Model implementations
 │   │   └── classifiers.py        # ML model initialization
@@ -48,8 +50,9 @@ cardia/
 │   │   ├── train_classical.py    # Classical ML training pipeline
 │   │   └── sweep.py              # Hyperparameter sweep implementations
 │   │
-│   ├── evaluation/               # Metrics and visualization
-│   │   └── metrics.py            # Evaluation functions and plotting
+│   ├── evaluation/               # Metrics and inference utilities
+│   │   ├── metrics.py            # Evaluation functions and plotting
+│   │   └── activity_predictor.py # Interval prediction + smoothing
 │   │
 │   └── utils/                    # General utilities
 │       ├── io.py                 # File I/O helpers
@@ -98,12 +101,14 @@ You can modify the default arguments in the [config](src/config.py) file, or spe
 Full CLI:
 
 ```
-usage: train_model.py [-h] [--data_dir DATA_DIR] [--dataset DATASET] [--filter_chest {true,false}] [--exclude_sensors EXCLUDE_SENSORS [EXCLUDE_SENSORS ...]]    
-                      [--group_activities {true,false}] [--combine_similar {true,false}] [--use_all_data {true,false}] [--use_heart_rate {true,false}]
-                      [--window_size_sec WINDOW_SIZE_SEC] [--overlap OVERLAP] [--sampling_rate SAMPLING_RATE] [--model_name {random_forest,xgboost}]
-                      [--learning_rate LEARNING_RATE] [--n_estimators N_ESTIMATORS] [--max_depth MAX_DEPTH] [--min_samples_split MIN_SAMPLES_SPLIT]
-                      [--min_samples_leaf MIN_SAMPLES_LEAF] [--subsample SUBSAMPLE] [--colsample_bytree COLSAMPLE_BYTREE] [--save_model {true,false}]
-                      [--save_predictions {true,false}] [--verbose {true,false}] [--output_dir OUTPUT_DIR] [--experiment_name EXPERIMENT_NAME] [--seed SEED]    
+usage: validate_activity.py [-h] [--data_dir DATA_DIR] [--dataset DATASET] [--filter_chest {true,false}] [--exclude_sensors EXCLUDE_SENSORS [EXCLUDE_SENSORS ...]]
+                            [--group_activities {true,false}] [--combine_similar {true,false}] [--use_all_data {true,false}] [--use_heart_rate {true,false}]
+                            [--window_size_sec WINDOW_SIZE_SEC] [--overlap OVERLAP] [--sampling_rate SAMPLING_RATE] [--model_name {random_forest,xgboost}]
+                            [--learning_rate LEARNING_RATE] [--n_estimators N_ESTIMATORS] [--max_depth MAX_DEPTH] [--min_samples_split MIN_SAMPLES_SPLIT]
+                            [--min_samples_leaf MIN_SAMPLES_LEAF] [--subsample SUBSAMPLE] [--colsample_bytree COLSAMPLE_BYTREE] [--save_model {true,false}]
+                            [--save_predictions {true,false}] [--verbose {true,false}] [--output_dir OUTPUT_DIR] [--experiment_name EXPERIMENT_NAME]
+                            [--recording RECORDING] [--model MODEL] [--intervals INTERVALS] [--orientation {old,new}] [--ecg_channel ECG_CHANNEL]
+                            [--smoothing {true,false}] [--seed SEED]
 
 Cardia Experimental Config
 
@@ -147,14 +152,7 @@ options:
   --save_model {true,false}
                         Save model. Default: True
   --save_predictions {true,false}
-                        Save predictions. Default: False
-  --verbose {true,false}
-                        Verbose output. Default: True
-  --output_dir OUTPUT_DIR
-                        Output directory. Default: models
-  --experiment_name EXPERIMENT_NAME
-                        Experiment name. Default: experiments
-  --seed SEED           Random seed. Default: 42
+     
 ```
 
 ## Usage
@@ -255,3 +253,17 @@ Sweep scripts produce additional outputs:
 - `xgb_sweep_results.csv`, `xgb_best_params.json` - XGBoost hyperparameter sweep
 - `*_window_sweep_results.csv`, `*_window_best_params.json` - Window size sweep
 - `*_sampling_rate_results.csv`, `*_sampling_rate_best_params.json` - Sampling rate sweep
+
+
+### Prototype Validation
+
+Run activity prediction on raw wearable recordings using a trained model.
+
+```bash
+python scripts/validate_activity \
+    --recording /path/to/recording.csv \
+    --model /path/to/model.pkl \
+    --intervals "HH:MM:SS-HH:MM:SS,HH:MM-HH:MM" \
+    --use_heart_rate true \
+    --smoothing true
+```
